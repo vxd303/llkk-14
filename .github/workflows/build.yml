@@ -93,6 +93,13 @@ jobs:
       - name: Apply OLLVM overlay (non-destructive)
         run: |
           cp -rf patcher/llvm aosp_toolchain_src/toolchain/llvm-project/
+
+          # 7.5) Patch build script to remove unnecessary phases
+      - name: Patch do_build.py to remove unnecessary phases
+        run: |
+          echo "INFO: Removing lines 874-882 from toolchain/llvm_android/do_build.py..."
+          sed -i '874,882d' aosp_toolchain_src/toolchain/llvm_android/do_build.py
+          echo "INFO: Patch successful."
           
       # 8) Build tối thiểu (bỏ windows/darwin, skip package & runtimes)
       - name: Build AOSP LLVM (minimal)
