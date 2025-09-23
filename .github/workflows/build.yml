@@ -44,28 +44,24 @@ jobs:
             python3 bison ccache xz-utils rsync jq
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-      
       # 3) (tuỳ môi trường) libffi6 cho script cũ
       - name: Install libffi6 dependency
         run: |
           curl -sSLO http://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
           sudo dpkg -i libffi6_3.2.1-8_amd64.deb || true
           rm -f libffi6_3.2.1-8_amd64.deb
-      
       # 4) Repo tool mới nhất (tránh bản quá cũ)
       - name: Install latest repo tool
         run: |
           sudo curl -sSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
           sudo chmod +x /usr/local/bin/repo
           repo --version || true
-      
       # 5) Cấu hình Git và thư mục tạm/cache nằm trong workspace
       - name: Configure Git & prepare dirs
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           mkdir -p "$TMPDIR" "$CCACHE_DIR"
-      
       # 6) repo init + sync (partial clone blobless; nếu fail thì fallback)
       - name: Initialize and Sync AOSP Toolchain Source
         run: |
@@ -93,7 +89,6 @@ jobs:
               --prune \
               -j"$(nproc)"
           fi
-      
       # 7) Overlay OLLVM (KHÔNG đè nguyên cây llvm/)
       - name: Apply OLLVM overlay (non-destructive)
         run: |
@@ -113,8 +108,7 @@ jobs:
           ccache -s || true
           du -sh out || true
           df -h
-      
-      # 9) Dọn out/*, giữ mỗi stage2-install (để nhẹ đĩa)
+       # 9) Dọn out/*, giữ mỗi stage2-install (để nhẹ đĩa)
       - name: Prune build outputs (keep stage2-install only)
         working-directory: ./aosp_toolchain_src
         run: |
@@ -124,21 +118,37 @@ jobs:
           fi
           du -sh out || true
           df -h
-      
-      # 10) Đóng gói toàn bộ stage2-install
-      - name: Package full stage2-install
+      # 10) Xác định đường dẫn clang bin
+      - name: Locate stage2 clang bin
+        working-directory: ./aosp_toolchain_src/out
         run: |
           set -euxo pipefail
-          tar -I 'xz -9e' -cf clang-full.tar.xz -C ./aosp_toolchain_src/out stage2-install
-          du -sh clang-full.tar.xz
+          if [ -d stage2-install/bin ]; then
+            echo "CLANG_BIN=$PWD/stage2-install/bin" >> "$GITHUB_ENV"
+            echo "Found: $PWD/stage2-install/bin"
+            ls -l stage2-install/bin | sed 's/^/  /'
+          else
+            echo "ERROR: stage2-install/bin not found."
+            echo "Candidates:"
+            find . -maxdepth 3 -type d -name bin -printf '%p\n' | sed 's/^/  /'
+            exit 1
+          fi
+      # 11) Đóng gói tối thiểu: chỉ file bắt đầu bằng 'clang' trong bin/
+      - name: Package minimal clang binaries
+        run: |
+          set -euxo pipefail
+          mkdir -p pkg/bin
+          shopt -s nullglob
+          cp -av "$CLANG_BIN"/clang* pkg/bin/
+          tar -I 'xz -9e' -cf clang-minimal.tar.xz -C pkg .
+          du -sh clang-minimal.tar.xz
           df -h
-      
-      # 11) Upload artifact
+      # 12) Upload artifact
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clang-full-stage2
-          path: clang-full.tar.xz
+          name: clang-minimal-stage2
+          path: clang-minimal.tar.xz
           retention-days: 7
 
       - name: Show free space (after)
